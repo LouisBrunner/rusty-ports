@@ -7,3 +7,4 @@ authors = ["Louis Brunner <louis.brunner.fr@gmail.com>"]
 clap = "2.25.0"
 users = "0.7"
 itertools = "0.7.3"
+mockstream = "0.0.3"

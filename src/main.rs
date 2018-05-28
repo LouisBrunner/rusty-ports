@@ -1,12 +1,14 @@
-#[macro_use]
+use std::process;
 
+extern crate itertools;
+extern crate mockstream;
+
+#[macro_use]
 extern crate clap;
 use clap::{App, Arg};
 
 extern crate users;
 use users::get_current_uid;
-
-use std::process;
 
 mod monitor;
 
