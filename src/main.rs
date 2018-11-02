@@ -1,18 +1,23 @@
-use std::process;
-
-extern crate itertools;
-extern crate mockstream;
 extern crate ctrlc;
-
+#[cfg(test)]
+extern crate mockers;
+#[cfg(test)]
+extern crate mockers_derive;
+#[cfg(test)]
+extern crate mockstream;
 #[macro_use]
 extern crate clap;
-use clap::{App, Arg};
-
 extern crate users;
+
+use std::io;
+use std::process;
+use std::sync::{Arc, Mutex};
+
+use clap::{App, Arg};
 use users::get_current_uid;
 
-mod net;
 mod monitor;
+mod net;
 mod reporters;
 mod utils;
 
@@ -52,14 +57,18 @@ fn main() {
         fatal_error("must be root to use ports from 1 to 1024");
     }
 
-    let reporter = reporters::console::new();
+    let stdout = io::stdout();
+    let reporter = reporters::console::new(Arc::new(Mutex::new(stdout)));
 
     let monitor = monitor::new(reporter, start, end);
     let sender = monitor.sender();
 
     ctrlc::set_handler(move || {
-        sender.send(monitor::Message::Stop).expect("Could not stop program");
-    }).expect("Error setting Ctrl-C handler");
+        sender
+            .send(monitor::Message::Stop)
+            .expect("Could not stop program");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     monitor.start();
 }

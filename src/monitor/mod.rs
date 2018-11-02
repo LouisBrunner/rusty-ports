@@ -1,7 +1,7 @@
-use std::thread;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 
 use reporters::Reporter;
 
@@ -18,13 +18,18 @@ pub struct Monitor<T> {
     stop: u16,
     receiver: mpsc::Receiver<Message>,
     sender: mpsc::Sender<Message>,
-
 }
 
 pub fn new<T: Reporter>(reporter: T, start: u16, stop: u16) -> Monitor<T> {
     let (sender, receiver) = mpsc::channel();
 
-    Monitor { reporter: Arc::new(reporter), start, stop, sender, receiver }
+    Monitor {
+        reporter: Arc::new(reporter),
+        start,
+        stop,
+        sender,
+        receiver,
+    }
 }
 
 impl<T: Reporter + Send + Sync + 'static> Monitor<T> {
@@ -42,7 +47,8 @@ impl<T: Reporter + Send + Sync + 'static> Monitor<T> {
             children.push(thread::spawn(move || {
                 let requested = server::new(nreporter, nrunning, port).run();
                 if !requested {
-                    tx.send(Message::ServerStopped { port }).expect("Could not stop program (internal failure)");
+                    tx.send(Message::ServerStopped { port })
+                        .expect("Could not stop program (internal failure)");
                 }
             }));
         }
@@ -69,3 +75,5 @@ impl<T: Reporter + Send + Sync + 'static> Monitor<T> {
         self.sender.clone()
     }
 }
+
+// TODO: basic tests

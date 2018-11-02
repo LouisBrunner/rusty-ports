@@ -1,5 +1,9 @@
 pub mod console;
 
+#[cfg(test)]
+use mockers_derive::mocked;
+
+#[cfg_attr(test, mocked)]
 pub trait Reporter {
     fn started(&self);
 

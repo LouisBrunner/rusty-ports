@@ -6,6 +6,12 @@ authors = ["Louis Brunner <louis.brunner.fr@gmail.com>"]
 [dependencies]
 clap = "2.25.0"
 users = "0.7"
-itertools = "0.7.3"
-mockstream = "0.0.3"
 ctrlc = { version = "3.0", features = ["termination"] }
+mockers_derive = "0.12.2"
+
+[dev-dependencies]
+mockstream = "0.0.3"
+mockers = "0.12.2"
+
+[badges]
+travis-ci = { repository = "LouisBrunner/rusty-ports", branch = "master" }
