@@ -8,3 +8,4 @@ clap = "2.25.0"
 users = "0.7"
 itertools = "0.7.3"
 mockstream = "0.0.3"
+ctrlc = { version = "3.0", features = ["termination"] }
