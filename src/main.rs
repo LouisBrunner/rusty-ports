@@ -1,4 +1,3 @@
-extern crate ctrlc;
 #[cfg(test)]
 extern crate mockers;
 #[cfg(test)]
@@ -8,14 +7,8 @@ extern crate testing_logger;
 
 #[macro_use]
 extern crate clap;
-extern crate users;
-extern crate log;
-extern crate simplelog;
-extern crate tokio;
-extern crate futures;
 
 use std::process;
-
 use clap::{App, Arg};
 use users::get_current_uid;
 
@@ -64,9 +57,9 @@ fn main() {
     let reporter = reporters::console::new();
 
     let monitor = monitor::new(&reporter, start, end);
-    ctrlc::set_handler(|| {
-      monitor.stopper()
-    }).expect("Error setting Ctrl-C handler");
+    // ctrlc::set_handler(|| {
+    //   monitor.stop()
+    // }).expect("Error setting Ctrl-C handler");
 
     if !monitor.start() {
         process::exit(1);

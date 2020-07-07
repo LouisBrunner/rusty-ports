@@ -1,4 +1,5 @@
-use reporters;
+use crate::reporters;
+
 use std::fmt;
 use std::fmt::Write;
 use log::{info, warn, error};
