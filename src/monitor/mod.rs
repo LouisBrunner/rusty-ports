@@ -4,9 +4,9 @@ use futures::sync::oneshot;
 
 use reporters::Reporter;
 
-mod server;
+// mod server;
 
-pub struct Monitor<'a, T> {
+pub struct Monitor<'a, T: Reporter> {
     reporter: &'a T,
     start: u16,
     stop: u16,

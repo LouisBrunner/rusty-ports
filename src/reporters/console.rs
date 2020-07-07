@@ -1,36 +1,13 @@
 use reporters;
-use std::char;
-use std::io;
-use std::io::Write;
-use std::sync::Mutex;
+use std::fmt;
+use std::fmt::Write;
+use log::{info, warn, error};
 
-enum Writer<'a, T: io::Write> {
-  File(Mutex<&'a mut T>),
-  Stdout(io::Stdout),
-  Stderr(io::Stderr),
+pub struct ConsoleReporter {
 }
 
-pub struct ConsoleReporter<'a, T: io::Write> {
-    out: Writer<'a, T>,
-}
-
-pub fn new_stdout(out: io::Stdout) -> impl reporters::Reporter {
-    ConsoleReporter::<io::Stdout> { out: Writer::Stdout(out) }
-}
-
-pub fn new_stderr(out: io::Stderr) -> impl reporters::Reporter {
-    ConsoleReporter::<io::Stderr> { out: Writer::Stderr(out) }
-}
-
-pub fn new_file<'a, T: io::Write>(file: Mutex<&'a mut T>) -> impl reporters::Reporter + 'a {
-    ConsoleReporter { out: Writer::File(file) }
-}
-
-macro_rules! write_line {
-    ($writer: expr, $header: ident, $gen: ident) => {
-      write!(&mut $writer, "{} ", $header).expect("reporter: failed to write");
-      $gen(&mut $writer).expect("reporter: failed to write");
-    };
+pub fn new() -> impl reporters::Reporter {
+    ConsoleReporter {}
 }
 
 enum Tag {
@@ -39,37 +16,55 @@ enum Tag {
     Client { id: usize },
 }
 
-impl<T: io::Write> ConsoleReporter<'_, T> {
-    fn report(&self, tag: &Tag, msg: &str) {
-        self.report_fn(tag, &|writer: &mut dyn io::Write| -> io::Result<()> {
-            writeln!(writer, "{}", msg)?;
-            Ok(())
-        })
-    }
-
-    fn report_str(&self, tag: &Tag, msg: String) {
-        self.report_fn(tag, &|writer: &mut dyn io::Write| -> io::Result<()> {
-            writeln!(writer, "{}", msg)?;
-            Ok(())
-        })
-    }
-
-    fn report_fn(&self, tag: &Tag, gen: & dyn Fn(&mut dyn io::Write) -> io::Result<()>) {
+impl ConsoleReporter {
+    fn report<S: Into<String>>(&self, tag: &Tag, msg: S) {
         let header = match tag {
             Tag::Monitor => "[MONIT]".to_string(),
             Tag::Server { port } => format!("[SERVR][{}]", port),
             Tag::Client { id } => format!("[CLIEN][{}]", id),
         };
 
-        match &self.out {
-          Writer::Stdout(out) => { write_line!(out.lock(), header, gen); },
-          Writer::Stderr(out) => { write_line!(out.lock(), header, gen); },
-          Writer::File(file) => { write_line!(*file.lock().expect("failed to lock file"), header, gen); },
-        }
+        info!("{} {}", header, msg.into());
     }
 }
 
-impl<T: io::Write> reporters::Reporter for ConsoleReporter<'_, T> {
+fn format_hex(msg: &[u8]) -> Result<String, fmt::Error> {
+    let mut s = String::new();
+
+    writeln!(s, "Received message:")?;
+
+    let chunk_size = 16;
+    let chunk_groups = 4;
+    for chunk in msg.chunks(chunk_size) {
+        let len_diff = chunk_size - chunk.len();
+        write!(s, "\t")?;
+
+        let mut i = 0;
+        for c in chunk {
+            if i % chunk_groups == 0 && i != 0 {
+                write!(s, " ")?;
+            }
+            write!(s, "{:02x}", c)?;
+            i += 1
+        }
+
+        let padding_len = len_diff * 2 + (len_diff / chunk_groups);
+        let padding = std::iter::repeat(" ").take(padding_len).collect::<String>();
+        write!(s, "{} |", padding)?;
+
+        for c in chunk {
+            let cc = *c as char;
+            write!(s, "{}", if char::is_control(cc) { '.' } else { cc })?;
+        }
+
+        let padding = std::iter::repeat(" ").take(len_diff).collect::<String>();
+        writeln!(s, "{}|", padding)?;
+    }
+
+    Ok(s)
+}
+
+impl reporters::Reporter for ConsoleReporter {
     fn started(&self) {
         self.report(&Tag::Monitor, "Started");
     }
@@ -79,43 +74,11 @@ impl<T: io::Write> reporters::Reporter for ConsoleReporter<'_, T> {
     }
 
     fn client_connected(&self, id: usize, port: u16) {
-        self.report_str(&Tag::Client { id }, format!("Connected on port {}", port));
+        self.report(&Tag::Client { id }, format!("Connected on port {}", port));
     }
 
     fn client_message_received(&self, id: usize, msg: &[u8]) {
-        self.report_fn(&Tag::Client { id }, &|writer: &mut dyn io::Write| -> io::Result<()> {
-            writeln!(writer, "Received message:")?;
-
-            let chunk_size = 16;
-            let chunk_groups = 4;
-            for chunk in msg.chunks(chunk_size) {
-                let len_diff = chunk_size - chunk.len();
-                write!(writer, "\t")?;
-
-                let mut i = 0;
-                for c in chunk {
-                    if i % chunk_groups == 0 && i != 0 {
-                        write!(writer, " ")?;
-                    }
-                    write!(writer, "{:02x}", c)?;
-                    i += 1
-                }
-
-                let padding_len = len_diff * 2 + (len_diff / chunk_groups);
-                let padding = std::iter::repeat(" ").take(padding_len).collect::<String>();
-                write!(writer, "{} |", padding)?;
-
-                for c in chunk {
-                    let cc = *c as char;
-                    write!(writer, "{}", if char::is_control(cc) { '.' } else { cc })?;
-                }
-
-                let padding = std::iter::repeat(" ").take(len_diff).collect::<String>();
-                writeln!(writer, "{}|", padding)?;
-            }
-
-            Ok(())
-        });
+        self.report(&Tag::Client { id }, &format_hex(msg).expect("reporter: could not generate"));
     }
 
     fn client_disconnected(&self, id: usize) {
@@ -131,11 +94,11 @@ impl<T: io::Write> reporters::Reporter for ConsoleReporter<'_, T> {
     }
 
     fn warning(&self, msg: String) {
-        self.report_str(&Tag::Monitor, format!("Warning: {}", msg));
+        warn!("{}", msg);
     }
 
     fn error(&self, msg: String) {
-        self.report_str(&Tag::Monitor, format!("Error: {}", msg));
+        error!("{}", msg);
     }
 
     fn stopping(&self) {
@@ -149,89 +112,82 @@ impl<T: io::Write> reporters::Reporter for ConsoleReporter<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use mockstream::MockStream;
-    use std::rc::Rc;
     use std::str;
+    use testing_logger;
+    use log;
 
     use super::*;
     use reporters::Reporter;
 
-    fn expect_stream_contains(ms: Mutex<&mut MockStream>, expected: &str) {
-        let written = ms
-            .lock()
-            .expect("could not read mock stream")
-            .pop_bytes_written();
-        assert_eq!(
-            str::from_utf8(&written).expect("is not valid UTF-8"),
-            expected
-        );
+    fn expect_log_contains(expected: &str) {
+        testing_logger::validate(|captured_logs| {
+            assert_eq!(captured_logs.len(), 1);
+            assert_eq!(captured_logs[0].body, expected);
+            assert_eq!(captured_logs[0].level, log::Level::Info);
+        });
     }
 
     #[test]
     fn it_notifies_start_stop() {
-        let ms = &mut MockStream::new();
-        let ms = Rc::new(Mutex::new(ms));
-        let reporter = new_file(*ms.clone());
-        let ms = *ms.clone();
+        testing_logger::setup();
+        let reporter = new();
 
         reporter.started();
-        expect_stream_contains(ms, "[MONIT] Started\n");
+        expect_log_contains("[MONIT] Started");
 
         reporter.stopping();
-        expect_stream_contains(ms, "[MONIT] Stopping...\n");
+        expect_log_contains("[MONIT] Stopping...");
 
         reporter.stopped();
-        expect_stream_contains(ms, "[MONIT] Stopped\n");
+        expect_log_contains("[MONIT] Stopped");
     }
 
-    // #[test]
-    // fn it_notifies_error_warning() {
-    //     let ms = Mutex::new(&mut MockStream::new());
-    //     let reporter = new_file(ms);
+    #[test]
+    fn it_notifies_error_warning() {
+        testing_logger::setup();
+        let reporter = new();
 
-    //     reporter.error("123".to_owned());
-    //     expect_stream_contains(ms, "[MONIT] Error: 123\n");
+        reporter.error("123".to_owned());
+        expect_log_contains("[MONIT] Error: 123");
 
-    //     reporter.warning("456".to_owned());
-    //     expect_stream_contains(ms, "[MONIT] Warning: 456\n");
-    // }
+        reporter.warning("456".to_owned());
+        expect_log_contains("[MONIT] Warning: 456");
+    }
 
-    // #[test]
-    // fn it_notifies_server_changes() {
-    //     let ms = Mutex::new(&mut MockStream::new());
-    //     let reporter = new_file(ms);
+    #[test]
+    fn it_notifies_server_changes() {
+        testing_logger::setup();
+        let reporter = new();
 
-    //     reporter.server_started(42);
-    //     expect_stream_contains(ms, "[SERVR][42] Started\n");
+        reporter.server_started(42);
+        expect_log_contains("[SERVR][42] Started");
 
-    //     reporter.server_stopping(42);
-    //     expect_stream_contains(ms, "[SERVR][42] Stopping...\n");
+        reporter.server_stopping(42);
+        expect_log_contains("[SERVR][42] Stopping...");
 
-    //     reporter.server_stopped(42);
-    //     expect_stream_contains(ms, "[SERVR][42] Stopped\n");
-    // }
+        reporter.server_stopped(42);
+        expect_log_contains("[SERVR][42] Stopped");
+    }
 
-    // #[test]
-    // fn it_notifies_client_changes() {
-    //     let ms = Mutex::new(&mut MockStream::new());
-    //     let reporter = new_file(ms);
+    #[test]
+    fn it_notifies_client_changes() {
+        testing_logger::setup();
+        let reporter = new();
 
-    //     reporter.client_connected(1337, 42);
-    //     expect_stream_contains(ms, "[CLIEN][1337] Connected on port 42\n");
+        reporter.client_connected(1337, 42);
+        expect_log_contains("[CLIEN][1337] Connected on port 42");
 
-    //     reporter.client_message_received(1337, &[1, 2, 3, 4, 5, 6, 56, 67, 78]);
-    //     expect_stream_contains(
-    //         ms,
-    //         "[CLIEN][1337] Received message:\n\t01020304 05063843 4e                |......8CN       |\n",
-    //     );
+        reporter.client_message_received(1337, &[1, 2, 3, 4, 5, 6, 56, 67, 78]);
+        expect_log_contains(
+            "[CLIEN][1337] Received message:\n\t01020304 05063843 4e                |......8CN       |\n",
+        );
 
-    //     reporter.client_message_received(1337, &[1, 2, 3, 4, 5, 6, 56, 67, 78, 1, 2, 3, 4, 5, 6, 7, 8]);
-    //     expect_stream_contains(
-    //         ms,
-    //         "[CLIEN][1337] Received message:\n\t01020304 05063843 4e010203 04050607 |......8CN.......|\n\t08                                  |.               |\n",
-    //     );
+        reporter.client_message_received(1337, &[1, 2, 3, 4, 5, 6, 56, 67, 78, 1, 2, 3, 4, 5, 6, 7, 8]);
+        expect_log_contains(
+            "[CLIEN][1337] Received message:\n\t01020304 05063843 4e010203 04050607 |......8CN.......|\n\t08                                  |.               |\n",
+        );
 
-    //     reporter.client_disconnected(1337);
-    //     expect_stream_contains(ms, "[CLIEN][1337] Disconnected\n");
-    // }
+        reporter.client_disconnected(1337);
+        expect_log_contains("[CLIEN][1337] Disconnected");
+    }
 }

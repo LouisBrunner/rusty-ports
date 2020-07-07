@@ -4,22 +4,22 @@ extern crate mockers;
 #[cfg(test)]
 extern crate mockers_derive;
 #[cfg(test)]
-extern crate mockstream;
+extern crate testing_logger;
 
 #[macro_use]
 extern crate clap;
 extern crate users;
+extern crate log;
+extern crate simplelog;
 extern crate tokio;
 extern crate futures;
 
-use std::io;
 use std::process;
-// use std::sync::{Arc, Mutex};
 
 use clap::{App, Arg};
 use users::get_current_uid;
 
-// mod monitor;
+mod monitor;
 // mod net;
 mod reporters;
 
@@ -42,6 +42,8 @@ fn fatal_error(error: &str) {
 }
 
 fn main() {
+    simplelog::TermLogger::init(simplelog::LevelFilter::Info, simplelog::Config::default(), simplelog::TerminalMode::Stdout).unwrap();
+
     let app = get_app();
     let app_help = app.clone();
 
@@ -59,12 +61,14 @@ fn main() {
         fatal_error("must be root to use ports from 1 to 1024");
     }
 
-    let reporter = reporters::console::new_stdout(io::stdout());
+    let reporter = reporters::console::new();
 
-    // let monitor = monitor::new(&reporter, start, end);
-    // ctrlc::set_handler(monitor.stopper()).expect("Error setting Ctrl-C handler");
+    let monitor = monitor::new(&reporter, start, end);
+    ctrlc::set_handler(|| {
+      monitor.stopper()
+    }).expect("Error setting Ctrl-C handler");
 
-    // if !monitor.start() {
-    //     process::exit(1);
-    // }
+    if !monitor.start() {
+        process::exit(1);
+    }
 }
