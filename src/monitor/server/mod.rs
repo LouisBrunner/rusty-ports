@@ -1,87 +1,55 @@
-use std::net;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
-use std::time;
+use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use tokio::runtime::Runtime;
+use tokio::net::TcpListener;
+use tokio::prelude::Stream;
+use tokio::prelude::Future;
 
 use reporters::Reporter;
-use utils;
 
 mod client;
 
-pub struct Server<T: Reporter> {
-    reporter: Arc<T>,
-    running: Arc<AtomicBool>,
+pub struct Server<'a, T: Reporter> {
+    reporter: &'a T,
     port: u16,
 }
 
-pub fn new<T: Reporter>(reporter: Arc<T>, running: Arc<AtomicBool>, port: u16) -> Server<T> {
+pub fn new<'a, T: Reporter>(reporter: &'a T, port: u16) -> Server<'a, T> {
     Server {
         reporter,
-        running,
         port,
     }
 }
 
-impl<T: Reporter + Send + Sync + 'static> Server<T> {
-    pub fn run(&self) -> bool {
-        let listener = match net::TcpListener::bind(("0.0.0.0", self.port)) {
+impl<'a, T: Reporter> Server<'a, T> {
+    pub fn run(&self, rt: &Runtime) -> Option<impl Future<Item=(), Error=()>> {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), self.port);
+        let listener = match TcpListener::bind(&addr) {
             Ok(server) => server,
             Err(err) => {
                 self.reporter
                     .error(format!("server(port: {}): {}", self.port, err.to_string()));
-                return false;
+                return None;
             }
         };
 
-        if let Err(err) = listener.set_nonblocking(true) {
-            self.reporter
-                .error(format!("server(port: {}): {}", self.port, err.to_string()));
-            return false;
-        }
-
-        let running = Arc::new(AtomicBool::new(true));
-        let mut children = vec![];
-
         self.reporter.server_started(self.port);
 
-        while self.running.load(Ordering::SeqCst) {
-            match listener.accept() {
-                Ok((stream, _)) => {
-                    let port = self.port;
-                    let nreporter = self.reporter.clone();
-                    let nrunning = running.clone();
+        let port = self.port;
+        let port2 = self.port;
+        let server = listener.incoming().for_each(move |socket| {
+            client::new(self.reporter, port, socket).run(rt);
+            Ok(())
+        })
+        .then(|res| -> Result<(), ()> {
+            self.reporter.server_stopped(port2);
+            res.map_err(|err| {
+                self.reporter.error(format!("server(port: {}): {}", port2, err.to_string()));
+                ()
+            })
+        })
+        ;
 
-                    children.push(thread::spawn(move || {
-                        client::new(nreporter, nrunning, port, stream).run();
-                    }));
-                }
-                Err(err) => {
-                    if !utils::is_timeout_error(&err) {
-                        self.reporter.error(format!(
-                            "server(port: {}): {}",
-                            self.port,
-                            err.to_string()
-                        ))
-                    };
-                }
-            }
-
-            // TODO: need a way to clean out the closed clients
-
-            thread::sleep(time::Duration::from_millis(100));
-        }
-
-        self.reporter.server_stopping(self.port);
-        running.store(false, Ordering::SeqCst);
-
-        for child in children {
-            child.join().expect("Could not join client thread");
-        }
-
-        self.reporter.server_stopped(self.port);
-
-        true
+        Some(server)
     }
 }
 

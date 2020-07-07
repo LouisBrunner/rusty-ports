@@ -4,14 +4,16 @@ version = "0.1.0"
 authors = ["Louis Brunner <louis.brunner.fr@gmail.com>"]
 
 [dependencies]
-clap = "2.25.0"
-users = "0.7"
-ctrlc = { version = "3.0", features = ["termination"] }
-mockers_derive = "0.12.2"
+clap = "2.33.1"
+users = "0.10.0"
+ctrlc = { version = "3.1.4", features = ["termination"] }
+mockers_derive = "0.21.0"
+tokio = "0.2.21"
+futures = "0.3.5"
 
 [dev-dependencies]
 mockstream = "0.0.3"
-mockers = "0.12.2"
+mockers = "0.21.0"
 
 [badges]
 travis-ci = { repository = "LouisBrunner/rusty-ports", branch = "master" }

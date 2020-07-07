@@ -1,6 +1,7 @@
 use std::io;
-use std::net::TcpStream;
 use std::time::Duration;
+use std;
+use tokio;
 
 pub trait RWTimeoutable {
     fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()>;
@@ -10,20 +11,29 @@ pub trait RWTimeoutable {
     fn write_timeout(&self) -> io::Result<Option<Duration>>;
 }
 
-impl RWTimeoutable for TcpStream {
-    fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        TcpStream::set_read_timeout(self, dur)
-    }
+macro_rules! mimpl {
+    ($T:ty => $($t:path),+) => {
+        $(impl $T for $t {
+            fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
+                Self::set_read_timeout(self, dur)
+            }
 
-    fn read_timeout(&self) -> io::Result<Option<Duration>> {
-        TcpStream::read_timeout(self)
-    }
+            fn read_timeout(&self) -> io::Result<Option<Duration>> {
+                Self::read_timeout(self)
+            }
 
-    fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        TcpStream::set_write_timeout(self, dur)
-    }
+            fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
+                Self::set_write_timeout(self, dur)
+            }
 
-    fn write_timeout(&self) -> io::Result<Option<Duration>> {
-        TcpStream::write_timeout(self)
+            fn write_timeout(&self) -> io::Result<Option<Duration>> {
+                Self::write_timeout(self)
+            }
+        })*
     }
+}
+
+
+mimpl!{
+    RWTimeoutable => std::net::TcpStream, tokio::net::TcpStream
 }

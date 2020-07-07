@@ -1,30 +1,24 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::thread;
+use tokio::runtime::Runtime;
+use tokio::prelude::Future;
+use futures::sync::oneshot;
 
 use reporters::Reporter;
 
 mod server;
 
-pub enum Message {
-    ServerStopped { port: u16 },
-    Stop,
-}
-
-pub struct Monitor<T> {
-    reporter: Arc<T>,
+pub struct Monitor<'a, T> {
+    reporter: &'a T,
     start: u16,
     stop: u16,
-    receiver: mpsc::Receiver<Message>,
-    sender: mpsc::Sender<Message>,
+    receiver: oneshot::Receiver<()>,
+    sender: oneshot::Sender<()>,
 }
 
-pub fn new<T: Reporter>(reporter: T, start: u16, stop: u16) -> Monitor<T> {
-    let (sender, receiver) = mpsc::channel();
+pub fn new<'a, T: Reporter>(reporter: &'a T, start: u16, stop: u16) -> Monitor<'a, T> {
+    let (sender, receiver) = oneshot::channel();
 
     Monitor {
-        reporter: Arc::new(reporter),
+        reporter,
         start,
         stop,
         sender,
@@ -32,47 +26,47 @@ pub fn new<T: Reporter>(reporter: T, start: u16, stop: u16) -> Monitor<T> {
     }
 }
 
-impl<T: Reporter + Send + Sync + 'static> Monitor<T> {
-    pub fn start(&self) {
-        let mut children = vec![];
-        let running = Arc::new(AtomicBool::new(true));
+impl<'a, T: Reporter> Monitor<'a, T> {
+    pub fn start(&self) -> bool {
+        let mut rt = Runtime::new().expect("Could not start runtime");
 
         self.reporter.started();
 
+        let mut futures = vec![];
+
         for port in self.start..=self.stop {
-            let nreporter = self.reporter.clone();
-            let nrunning = running.clone();
-            let tx = self.sender.clone();
-
-            children.push(thread::spawn(move || {
-                let requested = server::new(nreporter, nrunning, port).run();
-                if !requested {
-                    tx.send(Message::ServerStopped { port })
-                        .expect("Could not stop program (internal failure)");
-                }
-            }));
+            match server::new(self.reporter, port).run(&rt) {
+                Some(future) => futures.push(future),
+                None => return false,
+            }
         }
 
-        match self.receiver.recv() {
-            Ok(msg) => match msg {
-                Message::ServerStopped { .. } => (),
-                Message::Stop => (),
-            },
-            Err(err) => self.reporter.error(err.to_string()),
-        }
+        let joined_futures = join_all(&futures);
 
-        self.reporter.stopping();
-        running.store(false, Ordering::SeqCst);
+        let stopper = self.receiver.map(|_| {
+            self.reporter.stopping();
+            Ok(())
+        });
+        joined_futures.select(stopper).wait().expect("Could not run servers");
 
-        for child in children {
-            child.join().expect("Could not join server thread");
-        }
+        rt.shutdown_now().wait().expect("Could not stop servers");
 
         self.reporter.stopped();
+
+        true
     }
 
-    pub fn sender(&self) -> mpsc::Sender<Message> {
-        self.sender.clone()
+    pub fn stopper(&self) -> impl Fn() + 'static {
+        return move || {
+        };
+    }
+}
+
+fn join_all<I, E>(futures: &[&Future<Item=I, Error=E>]) -> Box<Future<Item=I, Error=E>> {
+    match futures {
+        [x] => Box::new(x),
+        // &[x, y, ref rest..] => join_all([x.join(y), rest..]),
+        _ => unimplemented!(),
     }
 }
 

@@ -5,21 +5,23 @@ extern crate mockers;
 extern crate mockers_derive;
 #[cfg(test)]
 extern crate mockstream;
+
 #[macro_use]
 extern crate clap;
 extern crate users;
+extern crate tokio;
+extern crate futures;
 
 use std::io;
 use std::process;
-use std::sync::{Arc, Mutex};
+// use std::sync::{Arc, Mutex};
 
 use clap::{App, Arg};
 use users::get_current_uid;
 
-mod monitor;
-mod net;
+// mod monitor;
+// mod net;
 mod reporters;
-mod utils;
 
 fn get_app<'a>() -> App<'a, 'a> {
     App::new("rusty-ports")
@@ -45,30 +47,24 @@ fn main() {
 
     let matches = app.get_matches();
 
-    let start = value_t!(matches, "RANGE_START", u16).expect("failed to get the range start");
-    let end = value_t!(matches, "RANGE_END", u16).expect("failed to get the range end");
+    let start = value_t_or_exit!(matches, "RANGE_START", u16);
+    let end = value_t_or_exit!(matches, "RANGE_END", u16);
 
     if start > end {
         app_help.clone().print_help().expect("failed to show help");
-        fatal_error("");
+        process::exit(1);
     }
 
     if start <= 1024 && get_current_uid() != 0 {
         fatal_error("must be root to use ports from 1 to 1024");
     }
 
-    let stdout = io::stdout();
-    let reporter = reporters::console::new(Arc::new(Mutex::new(stdout)));
+    let reporter = reporters::console::new_stdout(io::stdout());
 
-    let monitor = monitor::new(reporter, start, end);
-    let sender = monitor.sender();
+    // let monitor = monitor::new(&reporter, start, end);
+    // ctrlc::set_handler(monitor.stopper()).expect("Error setting Ctrl-C handler");
 
-    ctrlc::set_handler(move || {
-        sender
-            .send(monitor::Message::Stop)
-            .expect("Could not stop program");
-    })
-    .expect("Error setting Ctrl-C handler");
-
-    monitor.start();
+    // if !monitor.start() {
+    //     process::exit(1);
+    // }
 }
