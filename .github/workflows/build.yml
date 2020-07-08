@@ -1,0 +1,53 @@
+name: Build
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        components: rustfmt, clippy
+
+    - name: Install tools
+      uses: actions-rs/install@v0.1
+      with:
+        crate: cargo-kcov
+        version: latest
+        use-tool-cache: true
+    - name: Setup kcov
+      run: cargo kcov --print-install-kcov-sh | sh
+
+    - name: Check
+      uses: actions-rs/cargo@v1
+      with:
+        command: check
+        args: --verbose
+
+    - name: Test
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --verbose
+
+    - name: Collect coverage
+      uses: actions-rs/cargo@v1
+      with:
+        command: kcov
+        args: --verbose --coveralls
+
+    - name: Clippy
+      uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --all-features

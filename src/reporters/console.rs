@@ -40,13 +40,11 @@ fn format_hex(msg: &[u8]) -> Result<String, fmt::Error> {
         let len_diff = chunk_size - chunk.len();
         write!(s, "\t")?;
 
-        let mut i = 0;
-        for c in chunk {
+        for (i, c) in chunk.iter().enumerate() {
             if i % chunk_groups == 0 && i != 0 {
                 write!(s, " ")?;
             }
             write!(s, "{:02x}", c)?;
-            i += 1
         }
 
         let padding_len = len_diff * 2 + (len_diff / chunk_groups);
@@ -120,11 +118,11 @@ mod tests {
     use super::*;
     use reporters::Reporter;
 
-    fn expect_log_contains(expected: &str) {
+    fn expect_log_contains(expected: &str, level: log::Level) {
         testing_logger::validate(|captured_logs| {
             assert_eq!(captured_logs.len(), 1);
             assert_eq!(captured_logs[0].body, expected);
-            assert_eq!(captured_logs[0].level, log::Level::Info);
+            assert_eq!(captured_logs[0].level, level);
         });
     }
 
@@ -134,13 +132,13 @@ mod tests {
         let reporter = new();
 
         reporter.started();
-        expect_log_contains("[MONIT] Started");
+        expect_log_contains("[MONIT] Started", log::Level::Info);
 
         reporter.stopping();
-        expect_log_contains("[MONIT] Stopping...");
+        expect_log_contains("[MONIT] Stopping...", log::Level::Info);
 
         reporter.stopped();
-        expect_log_contains("[MONIT] Stopped");
+        expect_log_contains("[MONIT] Stopped", log::Level::Info);
     }
 
     #[test]
@@ -149,10 +147,10 @@ mod tests {
         let reporter = new();
 
         reporter.error("123".to_owned());
-        expect_log_contains("[MONIT] Error: 123");
+        expect_log_contains("123", log::Level::Error);
 
         reporter.warning("456".to_owned());
-        expect_log_contains("[MONIT] Warning: 456");
+        expect_log_contains("456", log::Level::Warn);
     }
 
     #[test]
@@ -161,13 +159,13 @@ mod tests {
         let reporter = new();
 
         reporter.server_started(42);
-        expect_log_contains("[SERVR][42] Started");
+        expect_log_contains("[SERVR][42] Started", log::Level::Info);
 
         reporter.server_stopping(42);
-        expect_log_contains("[SERVR][42] Stopping...");
+        expect_log_contains("[SERVR][42] Stopping...", log::Level::Info);
 
         reporter.server_stopped(42);
-        expect_log_contains("[SERVR][42] Stopped");
+        expect_log_contains("[SERVR][42] Stopped", log::Level::Info);
     }
 
     #[test]
@@ -176,19 +174,21 @@ mod tests {
         let reporter = new();
 
         reporter.client_connected(1337, 42);
-        expect_log_contains("[CLIEN][1337] Connected on port 42");
+        expect_log_contains("[CLIEN][1337] Connected on port 42", log::Level::Info);
 
         reporter.client_message_received(1337, &[1, 2, 3, 4, 5, 6, 56, 67, 78]);
         expect_log_contains(
             "[CLIEN][1337] Received message:\n\t01020304 05063843 4e                |......8CN       |\n",
+            log::Level::Info
         );
 
         reporter.client_message_received(1337, &[1, 2, 3, 4, 5, 6, 56, 67, 78, 1, 2, 3, 4, 5, 6, 7, 8]);
         expect_log_contains(
             "[CLIEN][1337] Received message:\n\t01020304 05063843 4e010203 04050607 |......8CN.......|\n\t08                                  |.               |\n",
+            log::Level::Info
         );
 
         reporter.client_disconnected(1337);
-        expect_log_contains("[CLIEN][1337] Disconnected");
+        expect_log_contains("[CLIEN][1337] Disconnected", log::Level::Info);
     }
 }

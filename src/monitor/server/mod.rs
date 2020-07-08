@@ -1,29 +1,43 @@
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+// use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 // use tokio::runtime::Runtime;
 // use tokio::net::TcpListener;
 // use tokio::prelude::Stream;
 // use tokio::prelude::future::Future;
 use std::time::Duration;
+use std::sync::Arc;
 use async_std::task;
+use thiserror::Error;
 
 use crate::reporters::Reporter;
 
 // mod client;
 
-pub struct Server<'a, T: Reporter> {
-    reporter: &'a T,
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("invalid toolchain name: {name}")]
+    InvalidToolchainName {
+        name: String,
+    },
+    #[error("unknown toolchain version: {version}")]
+    UnknownToolchainVersion {
+        version: String,
+    }
+}
+
+pub struct Server<T: Reporter> {
+    reporter: Arc<T>,
     port: u16,
 }
 
-pub fn new<'a, T: Reporter>(reporter: &'a T, port: u16) -> Server<'a, T> {
+pub fn new<T: Reporter>(reporter: Arc<T>, port: u16) -> Server<T> {
     Server {
         reporter,
         port,
     }
 }
 
-impl<'a, T: Reporter> Server<'a, T> {
-    pub async fn run(&self) -> bool {
+impl<T: Reporter> Server<T> {
+    pub async fn run(&self) -> Result<(), Error> {
         loop {
             self.reporter.error(format!("server(port: {}): hello!", self.port));
             task::sleep(Duration::from_secs(1)).await;
@@ -60,23 +74,4 @@ impl<'a, T: Reporter> Server<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    // use mockers::Scenario;
-    // use std::thread;
-    //
-    // use super::*;
-    //
-    // #[test]
-    // fn it_creates_a_nonblocking_server() {
-    //     let scenario = Scenario::new();
-    //     let reporter = Arc::new(scenario.create_mock_for::<Reporter>());
-    //     let atomic = Arc::new(AtomicBool::new(true));
-    //
-    // TODO: fix
-    //     thread::spawn(move || {
-    //         let worked = new(reporter, atomic, 6666).run();
-    //         assert!(worked);
-    //     });
-    //
-    //     atomic.store(false, Ordering::SeqCst);
-    // }
 }

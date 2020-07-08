@@ -1,4 +1,4 @@
-# rusty-ports [![Build Status][travis-image]][travis-url] [![Coverage Status][coveralls-image]][coveralls-url]
+# rusty-ports ![Build](https://github.com/LouisBrunner/rusty-ports/workflows/Build/badge.svg) [![Coverage Status][coveralls-image]][coveralls-url]
 
 This command line utility allows you to monitor a range of TCP ports on a computer.
 
@@ -34,7 +34,5 @@ You need to be root to be able to monitor ports below 1025 (the program will thr
 
 Mozilla Public License Version 2.0, Copyright (c) Louis Brunner
 
-[travis-image]: https://travis-ci.org/LouisBrunner/rusty-ports.svg?branch=master
-[travis-url]: https://travis-ci.org/LouisBrunner/rusty-ports
 [coveralls-image]: https://coveralls.io/repos/github/LouisBrunner/rusty-ports/badge.svg?branch=master
 [coveralls-url]: https://coveralls.io/github/LouisBrunner/rusty-ports?branch=master

@@ -1,55 +1,53 @@
-// use tokio::runtime::Runtime;
-// use tokio::prelude::future::Future;
-// use futures::sync::oneshot;
+use std::sync::Arc;
 use futures::future;
+use futures::future::FutureExt;
+use futures::select;
 use async_std::task;
 
 use crate::reporters::Reporter;
 
 mod server;
 
-pub struct Monitor<'a, T: Reporter> {
-    reporter: &'a T,
+pub use server::Error as Error;
+
+pub struct Monitor<T: Reporter> {
+    reporter: Arc<T>,
     start: u16,
-    stop: u16,
+    end: u16,
 }
 
-pub fn new<'a, T: Reporter>(reporter: &'a T, start: u16, stop: u16) -> Monitor<'a, T> {
+pub fn new<'a, T: Reporter>(reporter: T, start: u16, end: u16) -> Monitor<T> {
     Monitor {
-        reporter,
+        reporter: Arc::new(reporter),
         start,
-        stop,
+        end,
     }
 }
 
-impl<'a, T: Reporter> Monitor<'a, T> {
-    async fn exec(&self) -> Vec<bool> {
-        let servers = (self.start..=self.stop).map(|port: u16| -> server::Server<T> {
-          server::new(self.reporter, port)
+impl<T: Reporter> Monitor<T> {
+    async fn exec<F: future::Future>(&self, interrupt: F) -> Result<(), server::Error> {
+        let servers = (self.start..=self.end).map(|port: u16| -> server::Server<T> {
+          server::new(self.reporter.clone(), port)
         }).collect::<Vec<_>>();
 
         let futures = servers.iter().map(|srv: &server::Server<T>| -> _ {
           srv.run()
         }).collect::<Vec<_>>();
 
-        future::join_all(futures).await
+        select! {
+          res = future::try_join_all(futures).fuse() => res.map(|_| ()),
+          _ = interrupt.fuse() => {
+            self.reporter.stopping();
+            Ok(())
+          },
+        }
     }
 
-    pub fn start(&self) -> bool {
+    pub fn start<F: future::Future>(&mut self, interrupt: F) -> Result<(), server::Error> {
         self.reporter.started();
-
-        let results = task::block_on(self.exec());
-
+        let result = task::block_on(self.exec(interrupt));
         self.reporter.stopped();
-
-        results.iter().fold(true, |acc: bool, i: &bool| {
-          acc && *i
-        })
-    }
-
-    pub fn stop(&self) {
-        self.reporter.stopping()
-        // TODO?
+        result
     }
 }
 
