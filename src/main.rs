@@ -1,13 +1,20 @@
-#[cfg(test)] extern crate mockers;
-#[cfg(test)] extern crate mockers_derive;
-#[cfg(test)] extern crate testing_logger;
+#[cfg(test)]
+extern crate mockers;
+#[cfg(test)]
+extern crate mockers_derive;
+#[cfg(test)]
+extern crate testing_logger;
+#[macro_use]
+extern crate clap;
 
 mod monitor;
-// mod net;
 mod reporters;
 
-#[macro_use] extern crate clap;
 use clap::{App, Arg};
+use futures::future;
+use thiserror::Error;
+use users::get_current_uid;
+use std::sync::{Arc, Mutex};
 
 fn get_app<'a>() -> App<'a, 'a> {
     App::new("rusty-ports")
@@ -22,8 +29,6 @@ fn get_app<'a>() -> App<'a, 'a> {
              .index(2))
 }
 
-use thiserror::Error;
-
 #[derive(Error, Debug)]
 enum AppError {
     #[error("must be root to use ports from 1 to 1024")]
@@ -36,11 +41,13 @@ enum AppError {
     Clap(#[from] clap::Error),
 }
 
-use users::get_current_uid;
-use futures::future;
-
 fn inner_main() -> Result<(), AppError> {
-    simplelog::TermLogger::init(simplelog::LevelFilter::Info, simplelog::Config::default(), simplelog::TerminalMode::Stdout).unwrap();
+    simplelog::TermLogger::init(
+        simplelog::LevelFilter::Info,
+        simplelog::Config::default(),
+        simplelog::TerminalMode::Stdout,
+    )
+    .unwrap();
 
     let app = get_app();
     let app_help = app.clone();
@@ -60,10 +67,10 @@ fn inner_main() -> Result<(), AppError> {
         return Err(AppError::PrivilegedPorts);
     }
 
-    let reporter = reporters::console::new();
-    let mut monitor = monitor::new(reporter, start, end);
+    let reporter = Arc::new(Mutex::new(reporters::console::new()));
+    let monitor = monitor::new(reporter, start, end);
 
-    // TODO: add SIGINT catching
+    // TODO: add SIGINT catching, somehow...
 
     monitor.start::<future::Pending<()>>(future::pending())?;
 
@@ -71,16 +78,16 @@ fn inner_main() -> Result<(), AppError> {
 }
 
 fn main() {
-  use std::process::exit;
-  use libc::{EXIT_SUCCESS, EXIT_FAILURE};
+    use libc::{EXIT_FAILURE, EXIT_SUCCESS};
+    use std::process::exit;
 
-  // FIXME: rework this once Termination lands in stable (next decade)
-  exit(match inner_main() {
-      Ok(_) => EXIT_SUCCESS,
+    // FIXME: rework this once Termination lands in stable (next decade)
+    exit(match inner_main() {
+        Ok(_) => EXIT_SUCCESS,
 
-      Err(ref err) => {
-          println!("error: {}", err);
-          EXIT_FAILURE
-      }
-  })
+        Err(ref err) => {
+            println!("error: {}", err);
+            EXIT_FAILURE
+        }
+    })
 }

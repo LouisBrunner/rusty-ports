@@ -1,77 +1,56 @@
-// use std::net::{SocketAddr, IpAddr, Ipv4Addr};
-// use tokio::runtime::Runtime;
-// use tokio::net::TcpListener;
-// use tokio::prelude::Stream;
-// use tokio::prelude::future::Future;
-use std::time::Duration;
-use std::sync::Arc;
-use async_std::task;
-use thiserror::Error;
-
 use crate::reporters::Reporter;
 
-// mod client;
+mod client;
+
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
+use thiserror::Error;
+use async_std::{net::TcpListener, prelude::*, task};
+use std::sync::{Arc, Mutex};
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("invalid toolchain name: {name}")]
-    InvalidToolchainName {
-        name: String,
-    },
-    #[error("unknown toolchain version: {version}")]
-    UnknownToolchainVersion {
-        version: String,
-    }
+    #[error("fatal error (client={0}")]
+    Client(#[from] client::Error),
+    #[error("fatal error (IO={0}")]
+    IO(#[from] std::io::Error),
 }
 
 pub struct Server<T: Reporter> {
-    reporter: Arc<T>,
+    reporter: Arc<Mutex<T>>,
     port: u16,
 }
 
-pub fn new<T: Reporter>(reporter: Arc<T>, port: u16) -> Server<T> {
-    Server {
-        reporter,
-        port,
-    }
+pub fn new<T: Reporter>(reporter: Arc<Mutex<T>>, port: u16) -> Server<T> {
+    Server { reporter, port }
 }
 
-impl<T: Reporter> Server<T> {
+impl<T: Reporter + Send + 'static> Server<T> {
     pub async fn run(&self) -> Result<(), Error> {
-        loop {
-            self.reporter.error(format!("server(port: {}): hello!", self.port));
-            task::sleep(Duration::from_secs(1)).await;
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), self.port);
+        let listener = TcpListener::bind(&addr).await?;
+        let mut incoming = listener.incoming();
+
+        self.reporter.lock().unwrap().server_started(self.port);
+
+        while let Some(stream) = incoming.next().await {
+            let stream = stream?;
+            let reporter = self.reporter.clone();
+            let port = self.port;
+            task::spawn(async move {
+                let err_reporter = reporter.clone();
+                if let Err(e) = client::new(reporter, port, stream).run().await {
+                    err_reporter.lock().unwrap().error(format!("client failed: {}", e))
+                }
+            });
         }
-        // let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), self.port);
-        // let listener = match TcpListener::bind(&addr) {
-        //     Ok(server) => server,
-        //     Err(err) => {
-        //         self.reporter
-        //             .error(format!("server(port: {}): {}", self.port, err.to_string()));
-        //         return false;
-        //     }
-        // };
 
-        // self.reporter.server_started(self.port);
+        self.reporter.lock().unwrap().server_stopped(self.port);
 
-        // let port = self.port;
-        // let server = listener.incoming().for_each(move |socket| {
-        //     client::new(self.reporter, port, socket).run(rt);
-        //     Ok(())
-        // })
-        // .then(|res| -> Result<(), ()> {
-        //     self.reporter.server_stopped(port);
-        //     res.map_err(|err| {
-        //         self.reporter.error(format!("server(port: {}): {}", port, err.to_string()));
-        //         ()
-        //     })
-        // })
-        // ;
-
-        // true
+        Ok(())
     }
 }
 
 #[cfg(test)]
-mod tests {
-}
+mod tests {}

@@ -1,19 +1,22 @@
-use std::io::Read;
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
-use tokio::runtime::Runtime;
+use crate::reporters::Reporter;
 
-use net::RWTimeoutable;
-use reporters::Reporter;
+use thiserror::Error;
+use async_std::{net::TcpStream, prelude::*};
+use std::sync::{Arc, Mutex};
 
-static GLOBAL_CLIENT_COUNT: AtomicUsize = ATOMIC_USIZE_INIT;
-
-pub struct Client<'a, T: Reporter, U: Read + RWTimeoutable> {
-    reporter: &'a T,
-    port: u16,
-    stream: U,
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("fatal error (IO={0}")]
+    IO(#[from] std::io::Error),
 }
 
-pub fn new<'a, T: Reporter, U: Read + RWTimeoutable>(reporter: &'a T, port: u16, stream: U) -> Client<'a, T, U> {
+pub struct Client<T: Reporter> {
+    reporter: Arc<Mutex<T>>,
+    port: u16,
+    stream: TcpStream,
+}
+
+pub fn new<T: Reporter>(reporter: Arc<Mutex<T>>, port: u16, stream: TcpStream) -> Client<T> {
     Client {
         reporter,
         port,
@@ -21,32 +24,26 @@ pub fn new<'a, T: Reporter, U: Read + RWTimeoutable>(reporter: &'a T, port: u16,
     }
 }
 
-impl<'a, T: Reporter, U: Read + RWTimeoutable> Client<'a, T, U> {
-    pub fn run(&mut self, rt: &Runtime) {
-        let id = GLOBAL_CLIENT_COUNT.fetch_add(1, Ordering::SeqCst);
+impl<T: Reporter> Client<T> {
+    pub async fn run(&mut self) -> Result<(), Error> {
+        let addr = self.stream.peer_addr()?;
+        let id = addr.port().into();
 
-        self.reporter.client_connected(id, self.port);
+        self.reporter.lock().unwrap().client_connected(id, self.port);
 
-        // let mut buffer = [0u8; 1024];
-        // while self.running.load(Ordering::SeqCst) {
-        //     match self.stream.read(&mut buffer) {
-        //         Ok(n) => {
-        //             if n < 1 {
-        //                 break;
-        //             } else {
-        //                 self.reporter.client_message_received(id, &buffer[..n]);
-        //             }
-        //         }
-        //         Err(err) => {
-        //             if !utils::is_timeout_error(&err) {
-        //                 self.reporter
-        //                     .error(format!("client(id: {}): {}", id, err.to_string()))
-        //             }
-        //         }
-        //     }
-        // }
-        //
-        // self.reporter.client_disconnected(id);
+        let mut buffer = [0u8; 1024];
+        loop {
+            let bytes = self.stream.read(&mut buffer).await?;
+            if bytes > 0 {
+                self.reporter.lock().unwrap().client_message_received(id, &buffer[..bytes]);
+            } else if bytes == 0 {
+                break;
+            }
+        }
+
+        self.reporter.lock().unwrap().client_disconnected(id);
+
+        Ok(())
     }
 }
 

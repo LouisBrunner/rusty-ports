@@ -1,11 +1,10 @@
 use crate::reporters;
 
-use std::fmt;
-use std::fmt::Write;
-use log::{info, warn, error};
+use std::{fmt, fmt::Write};
 
-pub struct ConsoleReporter {
-}
+use log::{error, info, warn};
+
+pub struct ConsoleReporter {}
 
 pub fn new() -> impl reporters::Reporter {
     ConsoleReporter {}
@@ -77,7 +76,10 @@ impl reporters::Reporter for ConsoleReporter {
     }
 
     fn client_message_received(&self, id: usize, msg: &[u8]) {
-        self.report(&Tag::Client { id }, &format_hex(msg).expect("reporter: could not generate"));
+        self.report(
+            &Tag::Client { id },
+            &format_hex(msg).expect("reporter: could not generate"),
+        );
     }
 
     fn client_disconnected(&self, id: usize) {
@@ -111,9 +113,9 @@ impl reporters::Reporter for ConsoleReporter {
 
 #[cfg(test)]
 mod tests {
+    use log;
     use std::str;
     use testing_logger;
-    use log;
 
     use super::*;
     use reporters::Reporter;
@@ -182,7 +184,10 @@ mod tests {
             log::Level::Info
         );
 
-        reporter.client_message_received(1337, &[1, 2, 3, 4, 5, 6, 56, 67, 78, 1, 2, 3, 4, 5, 6, 7, 8]);
+        reporter.client_message_received(
+            1337,
+            &[1, 2, 3, 4, 5, 6, 56, 67, 78, 1, 2, 3, 4, 5, 6, 7, 8],
+        );
         expect_log_contains(
             "[CLIEN][1337] Received message:\n\t01020304 05063843 4e010203 04050607 |......8CN.......|\n\t08                                  |.               |\n",
             log::Level::Info
