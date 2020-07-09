@@ -1,8 +1,13 @@
 use crate::reporters::Reporter;
 
-use thiserror::Error;
-use async_std::{net::TcpStream, prelude::*, io::{Read, Result as IOResult}, net::SocketAddr};
+use async_std::{
+    io::{Read, Result as IOResult},
+    net::SocketAddr,
+    net::TcpStream,
+    prelude::*,
+};
 use std::sync::{Arc, Mutex};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -19,9 +24,9 @@ pub trait Addressable {
 }
 
 impl Addressable for TcpStream {
-  fn peer_addr(&self) -> IOResult<SocketAddr> {
-    self.peer_addr()
-  }
+    fn peer_addr(&self) -> IOResult<SocketAddr> {
+        self.peer_addr()
+    }
 }
 
 pub struct Client<T: Reporter, S: Read> {
@@ -43,13 +48,19 @@ impl<T: Reporter, S: Read + Unpin + Addressable> Client<T, S> {
         let addr = self.stream.peer_addr()?;
         let id = addr.port().into();
 
-        self.reporter.lock().unwrap().client_connected(id, self.port);
+        self.reporter
+            .lock()
+            .unwrap()
+            .client_connected(id, self.port);
 
         let mut buffer = [0u8; 1024];
         loop {
             let bytes = self.stream.read(&mut buffer).await?;
             if bytes > 0 {
-                self.reporter.lock().unwrap().client_message_received(id, &buffer[..bytes]);
+                self.reporter
+                    .lock()
+                    .unwrap()
+                    .client_message_received(id, &buffer[..bytes]);
             } else if bytes == 0 {
                 break;
             }
@@ -63,51 +74,53 @@ impl<T: Reporter, S: Read + Unpin + Addressable> Client<T, S> {
 
 #[cfg(test)]
 mod tests {
+    use async_std::{io::BufReader, task};
     use mockers::Scenario;
-    use async_std::{task, io::BufReader};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     use super::*;
 
     pub struct FakeReader<'a> {
-      content: BufReader<&'a[u8]>,
-      addr: SocketAddr,
+        content: BufReader<&'a [u8]>,
+        addr: SocketAddr,
     }
 
     impl Read for FakeReader<'_> {
-      // fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> impl Future<Result<usize>> {
-      //   future::ready(self.content.read(buf))
-      // }
-
-      fn poll_read(mut self: std::pin::Pin<&mut Self>, _: &mut task::Context<'_>, buffer: &mut [u8]) -> task::Poll<IOResult<usize>> {
-        let result = task::block_on(async {
-          self.content.read(buffer).await
-        });
-        task::Poll::Ready(result)
-      }
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            _: &mut task::Context<'_>,
+            buffer: &mut [u8],
+        ) -> task::Poll<IOResult<usize>> {
+            let result = task::block_on(async { self.content.read(buffer).await });
+            task::Poll::Ready(result)
+        }
     }
 
     impl Addressable for FakeReader<'_> {
-      fn peer_addr(&self) -> IOResult<SocketAddr> {
-        Ok(self.addr)
-      }
+        fn peer_addr(&self) -> IOResult<SocketAddr> {
+            Ok(self.addr)
+        }
     }
 
     #[test]
     fn it_handles_messages() {
         task::block_on(async {
-          let scenario = Scenario::new();
-          let (reporter, reporter_handle) = scenario.create_mock_for::<dyn Reporter>();
-          let reader = FakeReader{
-            content: BufReader::new("ABC 123".as_bytes()),
-            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1337),
-          };
+            let scenario = Scenario::new();
+            let (reporter, reporter_handle) = scenario.create_mock_for::<dyn Reporter>();
+            let reader = FakeReader {
+                content: BufReader::new("ABC 123".as_bytes()),
+                addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1337),
+            };
 
-          scenario.expect(reporter_handle.client_connected(1337, 42).and_return(()));
-          scenario.expect(reporter_handle.client_message_received(1337, "ABC 123".as_bytes()).and_return(()));
-          scenario.expect(reporter_handle.client_disconnected(1337).and_return(()));
-          let mut client = new(Arc::new(Mutex::new(reporter)), 42, reader);
-          assert!(client.run().await.is_ok());
+            scenario.expect(reporter_handle.client_connected(1337, 42).and_return(()));
+            scenario.expect(
+                reporter_handle
+                    .client_message_received(1337, "ABC 123".as_bytes())
+                    .and_return(()),
+            );
+            scenario.expect(reporter_handle.client_disconnected(1337).and_return(()));
+            let mut client = new(Arc::new(Mutex::new(reporter)), 42, reader);
+            assert!(client.run().await.is_ok());
         })
     }
 }
