@@ -12,9 +12,9 @@ mod reporters;
 
 use clap::{App, Arg};
 use futures::future;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use users::get_current_uid;
-use std::sync::{Arc, Mutex};
 
 fn get_app<'a>() -> App<'a, 'a> {
     App::new("rusty-ports")

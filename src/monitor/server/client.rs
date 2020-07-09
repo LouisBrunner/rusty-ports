@@ -1,7 +1,7 @@
 use crate::reporters::Reporter;
 
 use thiserror::Error;
-use async_std::{net::TcpStream, prelude::*};
+use async_std::{net::TcpStream, prelude::*, io::{Read, Result as IOResult}, net::SocketAddr};
 use std::sync::{Arc, Mutex};
 
 #[derive(Error, Debug)]
@@ -10,13 +10,27 @@ pub enum Error {
     IO(#[from] std::io::Error),
 }
 
-pub struct Client<T: Reporter> {
-    reporter: Arc<Mutex<T>>,
-    port: u16,
-    stream: TcpStream,
+#[cfg(test)]
+use mockers_derive::mocked;
+
+#[cfg_attr(test, mocked)]
+pub trait Addressable {
+    fn peer_addr(&self) -> IOResult<SocketAddr>;
 }
 
-pub fn new<T: Reporter>(reporter: Arc<Mutex<T>>, port: u16, stream: TcpStream) -> Client<T> {
+impl Addressable for TcpStream {
+  fn peer_addr(&self) -> IOResult<SocketAddr> {
+    self.peer_addr()
+  }
+}
+
+pub struct Client<T: Reporter, S: Read> {
+    reporter: Arc<Mutex<T>>,
+    port: u16,
+    stream: S,
+}
+
+pub fn new<T: Reporter, S: Read>(reporter: Arc<Mutex<T>>, port: u16, stream: S) -> Client<T, S> {
     Client {
         reporter,
         port,
@@ -24,7 +38,7 @@ pub fn new<T: Reporter>(reporter: Arc<Mutex<T>>, port: u16, stream: TcpStream) -
     }
 }
 
-impl<T: Reporter> Client<T> {
+impl<T: Reporter, S: Read + Unpin + Addressable> Client<T, S> {
     pub async fn run(&mut self) -> Result<(), Error> {
         let addr = self.stream.peer_addr()?;
         let id = addr.port().into();
@@ -49,24 +63,51 @@ impl<T: Reporter> Client<T> {
 
 #[cfg(test)]
 mod tests {
-    // use mockstream::MockStream;
-    // use mockers::Scenario;
-    // use std::thread;
-    //
-    // use super::*;
-    //
-    // #[test]
-    // fn it_handles_messages() {
-    //     let scenario = Scenario::new();
-    //     let reporter = Arc::new(scenario.create_mock_for::<Reporter>());
-    //     let ms = MockStream::new();
-    //     let atomic = Arc::new(AtomicBool::new(true));
-    //
-    //     // TODO: finish and more cases
-    //     // thread::spawn(move || {
-    //     //     new(reporter, atomic, 42, ms).run();
-    //     // });
-    //
-    //     atomic.store(false, Ordering::SeqCst);
-    // }
+    use mockers::Scenario;
+    use async_std::{task, io::BufReader};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    use super::*;
+
+    pub struct FakeReader<'a> {
+      content: BufReader<&'a[u8]>,
+      addr: SocketAddr,
+    }
+
+    impl Read for FakeReader<'_> {
+      // fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> impl Future<Result<usize>> {
+      //   future::ready(self.content.read(buf))
+      // }
+
+      fn poll_read(mut self: std::pin::Pin<&mut Self>, _: &mut task::Context<'_>, buffer: &mut [u8]) -> task::Poll<IOResult<usize>> {
+        let result = task::block_on(async {
+          self.content.read(buffer).await
+        });
+        task::Poll::Ready(result)
+      }
+    }
+
+    impl Addressable for FakeReader<'_> {
+      fn peer_addr(&self) -> IOResult<SocketAddr> {
+        Ok(self.addr)
+      }
+    }
+
+    #[test]
+    fn it_handles_messages() {
+        task::block_on(async {
+          let scenario = Scenario::new();
+          let (reporter, reporter_handle) = scenario.create_mock_for::<dyn Reporter>();
+          let reader = FakeReader{
+            content: BufReader::new("ABC 123".as_bytes()),
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1337),
+          };
+
+          scenario.expect(reporter_handle.client_connected(1337, 42).and_return(()));
+          scenario.expect(reporter_handle.client_message_received(1337, "ABC 123".as_bytes()).and_return(()));
+          scenario.expect(reporter_handle.client_disconnected(1337).and_return(()));
+          let mut client = new(Arc::new(Mutex::new(reporter)), 42, reader);
+          assert!(client.run().await.is_ok());
+        })
+    }
 }

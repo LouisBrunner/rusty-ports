@@ -2,12 +2,10 @@ use crate::reporters::Reporter;
 
 mod client;
 
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-};
-use thiserror::Error;
 use async_std::{net::TcpListener, prelude::*, task};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -41,7 +39,10 @@ impl<T: Reporter + Send + 'static> Server<T> {
             task::spawn(async move {
                 let err_reporter = reporter.clone();
                 if let Err(e) = client::new(reporter, port, stream).run().await {
-                    err_reporter.lock().unwrap().error(format!("client failed: {}", e))
+                    err_reporter
+                        .lock()
+                        .unwrap()
+                        .error(format!("client failed: {}", e))
                 }
             });
         }

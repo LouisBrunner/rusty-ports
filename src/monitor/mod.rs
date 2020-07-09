@@ -2,8 +2,8 @@ use crate::reporters::Reporter;
 
 mod server;
 
-use futures::{future, future::FutureExt, select};
 use async_std::task;
+use futures::{future, future::FutureExt, select};
 use std::sync::{Arc, Mutex};
 
 pub use server::Error;
