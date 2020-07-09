@@ -25,8 +25,8 @@ jobs:
         crate: cargo-kcov
         version: latest
         use-tool-cache: true
-    # - name: Setup kcov
-    #   run: cargo kcov --print-install-kcov-sh | sh
+    - name: Setup kcov
+      run: sudo apt-get install kcov
 
     - name: Check
       uses: actions-rs/cargo@v1
