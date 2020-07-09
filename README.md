@@ -1,4 +1,4 @@
-# rusty-ports ![Build](https://github.com/LouisBrunner/rusty-ports/workflows/Build/badge.svg) [![Coverage Status][coveralls-image]][coveralls-url]
+# rusty-ports ![Build](https://github.com/LouisBrunner/rusty-ports/workflows/Build/badge.svg) [![Coverage Status][coveralls-image]][coveralls-url] ![Security audit](https://github.com/LouisBrunner/rusty-ports/workflows/Security%20audit/badge.svg)
 
 This command line utility allows you to monitor a range of TCP ports on a computer.
 
