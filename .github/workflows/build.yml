@@ -47,6 +47,8 @@ jobs:
       with:
         command: kcov
         args: --verbose --coveralls
+      env:
+        TRAVIS_JOB_ID: ${{ env.GITHUB_RUN_ID }}
 
     - name: Format check
       uses: actions-rs/cargo@v1
