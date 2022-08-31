@@ -14,7 +14,7 @@ pub struct Monitor<T: Reporter> {
     end: u16,
 }
 
-pub fn new<'a, T: Reporter>(reporter: Arc<Mutex<T>>, start: u16, end: u16) -> Monitor<T> {
+pub fn new<T: Reporter>(reporter: Arc<Mutex<T>>, start: u16, end: u16) -> Monitor<T> {
     Monitor {
         reporter,
         start,

@@ -6,7 +6,10 @@ use async_std::{
     net::TcpStream,
     prelude::*,
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    cmp::Ordering,
+    sync::{Arc, Mutex},
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -54,15 +57,19 @@ impl<T: Reporter, S: Read + Unpin + Addressable> Client<T, S> {
             .client_connected(id, self.port);
 
         let mut buffer = [0u8; 1024];
-        loop {
+        'outer: loop {
             let bytes = self.stream.read(&mut buffer).await?;
-            if bytes > 0 {
-                self.reporter
-                    .lock()
-                    .unwrap()
-                    .client_message_received(id, &buffer[..bytes]);
-            } else if bytes == 0 {
-                break;
+            match bytes.cmp(&0) {
+                Ordering::Greater => {
+                    self.reporter
+                        .lock()
+                        .unwrap()
+                        .client_message_received(id, &buffer[..bytes]);
+                }
+                Ordering::Equal => {
+                    break 'outer;
+                }
+                _ => (),
             }
         }
 

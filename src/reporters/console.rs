@@ -47,7 +47,7 @@ fn format_hex(msg: &[u8]) -> Result<String, fmt::Error> {
         }
 
         let padding_len = len_diff * 2 + (len_diff / chunk_groups);
-        let padding = std::iter::repeat(" ").take(padding_len).collect::<String>();
+        let padding = " ".repeat(padding_len);
         write!(s, "{} |", padding)?;
 
         for c in chunk {
@@ -55,7 +55,7 @@ fn format_hex(msg: &[u8]) -> Result<String, fmt::Error> {
             write!(s, "{}", if char::is_control(cc) { '.' } else { cc })?;
         }
 
-        let padding = std::iter::repeat(" ").take(len_diff).collect::<String>();
+        let padding = " ".repeat(len_diff);
         writeln!(s, "{}|", padding)?;
     }
 
