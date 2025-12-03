@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 clap = "2.33.1"
-users = "0.10.0"
+users = "0.11.0"
 mockers_derive = "0.21.0"
 futures = "0.3.21"
 log = "0.4.8"
